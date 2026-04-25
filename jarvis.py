@@ -4307,7 +4307,7 @@ class JarvisApp(ctk.CTk):
                       "a la pantalla secundaria", "en la pantalla secundaria"]:
             app_name = app_name.lower().replace(noise, "").strip()
         for prefix in ["ponmelo ", "ponme ", "ponlo ", "muévelo ", "muevelo ",
-                       "pon ", "mueve ", "pasa ", "lleva "]:
+                       "pasalo ", "pásalo ", "pon ", "mueve ", "pasa ", "lleva "]:
             if app_name.startswith(prefix):
                 app_name = app_name[len(prefix):].strip()
         if not app_name:
