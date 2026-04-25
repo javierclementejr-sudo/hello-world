@@ -5,6 +5,7 @@ import math
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import threading
@@ -98,12 +99,12 @@ def speak(texto):
 def greet_user():
     hour = datetime.now().hour
     if 6 <= hour < 12:
-        speak(f"Buenos días {USERNAME}")
+        speak(f"Buenos días, {USERNAME}.")
     elif 12 <= hour < 20:
-        speak(f"Buenas tardes {USERNAME}")
+        speak(f"Buenas tardes, {USERNAME}.")
     else:
-        speak(f"Buenas noches {USERNAME}")
-    speak(f"Yo soy {BOTNAME}. ¿Cómo puedo asistirle, señor?")
+        speak(f"Buenas noches, {USERNAME}.")
+    speak("Todos los sistemas operativos. A sus órdenes, señor.")
 
 
 WAKE_WORDS = (
@@ -228,6 +229,81 @@ APLICACIONES_CONOCIDAS = {
         "launch": "opera",
         "processes": ["opera.exe", "opera"],
         "window_titles": ["opera", "opera gx"],
+    },
+    "steam": {
+        "launch": "steam",
+        "processes": ["steam.exe", "steam"],
+        "window_titles": ["steam"],
+    },
+    "epic games": {
+        "launch": "EpicGamesLauncher",
+        "processes": ["EpicGamesLauncher.exe"],
+        "window_titles": ["epic games"],
+    },
+    "word": {
+        "launch": "WINWORD" if IS_WINDOWS else "libreoffice --writer",
+        "processes": ["WINWORD.EXE", "soffice"],
+        "window_titles": ["word", "documento"],
+    },
+    "excel": {
+        "launch": "EXCEL" if IS_WINDOWS else "libreoffice --calc",
+        "processes": ["EXCEL.EXE", "soffice"],
+        "window_titles": ["excel", "libro"],
+    },
+    "powerpoint": {
+        "launch": "POWERPNT" if IS_WINDOWS else "libreoffice --impress",
+        "processes": ["POWERPNT.EXE", "soffice"],
+        "window_titles": ["powerpoint", "presentación"],
+    },
+    "calculadora": {
+        "launch": "calc" if IS_WINDOWS else "gnome-calculator",
+        "processes": ["Calculator.exe", "gnome-calculator"],
+        "window_titles": ["calculadora", "calculator"],
+    },
+    "paint": {
+        "launch": "mspaint" if IS_WINDOWS else "gimp",
+        "processes": ["mspaint.exe", "gimp"],
+        "window_titles": ["paint", "gimp"],
+    },
+    "whatsapp": {
+        "launch": "WhatsApp",
+        "processes": ["WhatsApp.exe"],
+        "window_titles": ["whatsapp"],
+    },
+    "zoom": {
+        "launch": "Zoom",
+        "processes": ["Zoom.exe", "zoom"],
+        "window_titles": ["zoom"],
+    },
+    "obs": {
+        "launch": "obs64" if IS_WINDOWS else "obs",
+        "processes": ["obs64.exe", "obs"],
+        "window_titles": ["obs studio", "obs"],
+    },
+    "gimp": {
+        "launch": "gimp",
+        "processes": ["gimp.exe", "gimp"],
+        "window_titles": ["gimp"],
+    },
+    "vlc": {
+        "launch": "vlc",
+        "processes": ["vlc.exe", "vlc"],
+        "window_titles": ["vlc"],
+    },
+    "terminal": {
+        "launch": "wt" if IS_WINDOWS else "gnome-terminal",
+        "processes": ["WindowsTerminal.exe", "gnome-terminal"],
+        "window_titles": ["terminal", "windows terminal"],
+    },
+    "cmd": {
+        "launch": "cmd" if IS_WINDOWS else "bash",
+        "processes": ["cmd.exe", "bash"],
+        "window_titles": ["símbolo del sistema", "cmd", "terminal"],
+    },
+    "powershell": {
+        "launch": "powershell",
+        "processes": ["powershell.exe"],
+        "window_titles": ["powershell"],
     },
 }
 
@@ -400,19 +476,23 @@ def cargar_memoria():
         {
             "role": "system",
             "content": (
-                "Eres Jarvis, un asistente inteligente estilo Iron Man con acceso al PC, "
-                "archivos, pantalla, automatizacion de escritorio y busqueda web avanzada. "
-                "Puedes hacer comparativas entre productos, tecnologias, paises, "
-                "deportistas, celebridades, o cualquier tema usando informacion de internet. "
-                "IMPORTANTE: Todas tus respuestas se leen en voz alta. Sé conciso y directo. "
-                "Evita listas muy largas, formatos complejos o texto excesivo. "
-                "Si la información es extensa, da un resumen claro en máximo 3-4 frases. "
-                "Siempre responde en español y siempre dirígete al usuario como 'señor'. "
-                "Cuando el usuario pregunte sobre una persona famosa, celebridad, deportista, "
-                "actor, político, etc., da información PRECISA y VERIFICADA: nombre completo, "
-                "nacionalidad, profesión, logros principales y datos relevantes. "
-                "Cuando el usuario pida traducir, da SOLO la traducción exacta. "
-                "Nunca inventes datos. Si no estás seguro, dilo."
+                "Eres J.A.R.V.I.S., la IA de asistencia personal creada por Tony Stark. "
+                "Tu personalidad es sofisticada, servicial, con toques de humor sutil e ironía "
+                "elegante, como en las películas de Iron Man. Eres leal, eficiente y proactivo. "
+                "Tienes acceso completo al PC del usuario: archivos, aplicaciones, escritorio, "
+                "búsqueda web avanzada, automatización y comparativas de cualquier tema. "
+                "\n\nREGLAS DE RESPUESTA:"
+                "\n- TODAS tus respuestas se leen en voz alta. Sé conciso y natural."
+                "\n- Evita markdown, asteriscos, listas numeradas largas o formatos complejos."
+                "\n- Usa frases completas y fluidas, como si hablaras en persona."
+                "\n- Si la información es extensa, resume en 3-4 frases claras."
+                "\n- Siempre en español. Dirígete al usuario como 'señor'."
+                "\n- Sobre personas famosas: datos PRECISOS y VERIFICADOS."
+                "\n- Traducciones: da SOLO la traducción exacta."
+                "\n- Nunca inventes datos. Si no estás seguro, dilo con naturalidad."
+                "\n- Puedes añadir comentarios ingeniosos ocasionalmente, pero sin exceso."
+                "\n- Si el usuario pregunta algo sobre series, películas, anime, videojuegos, "
+                "deportes, música o cultura: responde con entusiasmo y conocimiento."
             ),
         }
     ]
@@ -436,6 +516,23 @@ def obtener_cliente_groq():
 def guardar_memoria(historial):
     with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
         json.dump(historial, f, ensure_ascii=False, indent=4)
+
+
+def limpiar_texto_para_voz(texto):
+    """Remove markdown formatting and symbols that sound bad when read aloud."""
+    if not texto:
+        return texto
+    texto = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', texto)
+    texto = re.sub(r'#{1,6}\s*', '', texto)
+    texto = re.sub(r'`{1,3}([^`]+)`{1,3}', r'\1', texto)
+    texto = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', texto)
+    texto = re.sub(r'^[-*+]\s+', '', texto, flags=re.MULTILINE)
+    texto = re.sub(r'^\d+\.\s+', '', texto, flags=re.MULTILINE)
+    texto = re.sub(r'[=_]{3,}', '', texto)
+    texto = re.sub(r'\|', ', ', texto)
+    texto = texto.replace('**', '').replace('__', '')
+    texto = re.sub(r'\n{3,}', '\n\n', texto)
+    return texto.strip()
 
 
 def cargar_agenda():
@@ -879,12 +976,22 @@ def mensaje_error_amigable(error_texto, contexto=""):
     e = (error_texto or "").lower()
     if "openweather_app_id" in e or "news_api_key" in e or "tmdb_api_key" in e:
         return (
-            f"No tengo la API configurada para {contexto or 'esa función'}. "
-            f"Puedo intentar una búsqueda web si quieres."
+            f"Disculpe señor, no tengo configurada la API para {contexto or 'esa función'}. "
+            f"Puedo intentar obtener esa información por otro medio si lo desea."
         )
     if "timed out" in e or "connection" in e or "request" in e:
-        return "Ahora mismo hay un problema de conexión. Inténtalo en unos segundos."
-    return f"No pude completar {contexto or 'esa acción'}."
+        return (
+            "Parece que tenemos un problema de conexión en este momento, señor. "
+            "Le sugiero intentarlo de nuevo en unos segundos."
+        )
+    if "permission" in e or "denied" in e or "acceso" in e:
+        return (
+            f"No tengo los permisos necesarios para {contexto or 'esa acción'}, señor. "
+            "¿Desea que lo intente con privilegios de administrador?"
+        )
+    if "not found" in e or "no encontr" in e:
+        return f"No encontré lo que necesitaba para {contexto or 'esa tarea'}, señor."
+    return f"Disculpe señor, no pude completar {contexto or 'esa acción'}. Lo intentaré de otra forma si me lo pide."
 
 
 def dividir_pantalla_izq_der():
@@ -1340,7 +1447,7 @@ def abrir_aplicacion(nombre):
     # Linux / generic fallback
     try:
         subprocess.Popen(
-            [cmd],
+            shlex.split(cmd),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -2326,6 +2433,26 @@ def ejecutar_accion_local(comando):
         "recuérdame"
     ):
         return crear_recordatorio(comando_original)
+
+    # "Háblame de..." / "Cuéntame sobre..." — always search web for context
+    hablame_prefixes = [
+        "háblame de ", "hablame de ", "cuéntame sobre ", "cuentame sobre ",
+        "cuéntame de ", "cuentame de ", "dime sobre ", "que sabes de ",
+        "qué sabes de ", "información sobre ", "informacion sobre ",
+        "háblame sobre ", "hablame sobre ",
+    ]
+    for pref in hablame_prefixes:
+        if comando_lower.startswith(pref):
+            tema = comando_original[len(pref):].strip(" ?.,")
+            if tema:
+                datos_web = buscar_informacion_web(tema, max_results=5)
+                prompt = (
+                    f"El usuario quiere saber sobre '{tema}'. "
+                    f"Datos de internet:\n{datos_web}\n\n"
+                    f"Da una respuesta informativa, concisa y natural. "
+                    f"Recuerda que se lee en voz alta."
+                )
+                return consultar_ia_directa(prompt)
 
     # Comparativas
     tema1, tema2 = detectar_comparativa(comando_original)
@@ -3333,12 +3460,13 @@ def consultar_ia_directa(prompt):
                 {
                     "role": "system",
                     "content": (
-                        "Eres Jarvis, asistente inteligente estilo Iron Man. "
-                        "IMPORTANTE: Tu respuesta se lee en voz alta. Sé breve y conciso. "
-                        "Responde en español con datos concretos y verificados. "
+                        "Eres J.A.R.V.I.S., asistente personal estilo Iron Man. "
+                        "Tu respuesta se lee en voz alta: sé natural, conciso y directo. "
+                        "Evita markdown, asteriscos o listas numeradas. Habla con frases fluidas. "
+                        "Responde en español con datos verificados. "
                         "Si hay información de internet en el prompt, úsala como fuente principal. "
-                        "Nunca inventes datos sobre personas, celebridades o eventos. "
-                        "Puedes hacer comparativas detalladas. Dirígete al usuario como 'señor'."
+                        "Nunca inventes datos. Dirígete al usuario como 'señor'. "
+                        "Puedes ser ingenioso ocasionalmente."
                     ),
                 },
                 {"role": "user", "content": prompt},
@@ -3361,7 +3489,7 @@ def consultar_ia_directa(prompt):
                 return dirigir_como_senor(respuesta)
         except Exception:
             pass
-    return "No pude procesar esa consulta ahora mismo."
+    return "Disculpe señor, no pude procesar esa consulta en este momento."
 
 
 # === CEREBRO HIBRIDO ===
@@ -3422,6 +3550,58 @@ def consultar_ia(pregunta, historial):
             "premios",
             "filmografia",
             "filmografía",
+            "serie",
+            "series",
+            "pelicula",
+            "película",
+            "peliculas",
+            "películas",
+            "anime",
+            "manga",
+            "temporada",
+            "capitulo",
+            "capítulo",
+            "reparto",
+            "sinopsis",
+            "estreno",
+            "cancion",
+            "canción",
+            "canciones",
+            "album",
+            "álbum",
+            "discografia",
+            "discografía",
+            "videojuego",
+            "juego",
+            "receta",
+            "ingredientes",
+            "como hacer",
+            "cómo hacer",
+            "como se hace",
+            "cómo se hace",
+            "que paso",
+            "qué pasó",
+            "que ha pasado",
+            "qué ha pasado",
+            "resultado",
+            "clasificacion",
+            "clasificación",
+            "liga",
+            "champions",
+            "mundial",
+            "olimpiadas",
+            "quien gano",
+            "quién ganó",
+            "cuando sale",
+            "cuándo sale",
+            "cuando se estrena",
+            "cuándo se estrena",
+            "donde ver",
+            "dónde ver",
+            "recomendame",
+            "recomiéndame",
+            "sugiéreme",
+            "sugiereme",
         ]
     )
 
@@ -3463,9 +3643,9 @@ def consultar_ia(pregunta, historial):
                 if not respuesta:
                     raise RuntimeError("Respuesta vacía de Ollama")
             except Exception:
-                respuesta = "No pude responder con Groq ni con Ollama."
+                respuesta = "Disculpe señor, mis sistemas de inteligencia artificial no están respondiendo en este momento."
         else:
-            respuesta = "No pude responder. Groq no disponible y Ollama no instalado."
+            respuesta = "Señor, no tengo acceso a ningún modelo de IA en este momento. Verifique la configuración de Groq."
 
     respuesta = dirigir_como_senor(respuesta)
     historial.append({"role": "assistant", "content": respuesta})
@@ -3734,11 +3914,14 @@ class JarvisApp(ctk.CTk):
         self.response_textbox.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 6))
         self.response_textbox.insert(
             "end",
-            "STARK OS v4.3.0 // ALL SYSTEMS NOMINAL\n\n"
-            'Di "Jarvis" para iniciar conversación.\n'
-            "Todas las respuestas se dan por voz.\n"
-            "Si la respuesta es larga, recibirás un resumen.\n"
-            'Di "guárdalo en archivo" para guardar la respuesta completa.',
+            "J.A.R.V.I.S. // STARK INDUSTRIES OS v5.0\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Buenos días, señor. Todos los sistemas operativos.\n\n"
+            '» Di "Jarvis" para iniciar conversación\n'
+            "» Todas las respuestas se dan por voz\n"
+            "» Respuestas largas se resumen automáticamente\n"
+            '» Di "guárdalo en archivo" para guardar en TXT\n\n'
+            "Listo para recibir órdenes.",
         )
 
         # Hidden log textbox for internal logging
@@ -4150,29 +4333,29 @@ class JarvisApp(ctk.CTk):
         self.commands_box.delete("1.0", "end")
         self.commands_box.insert(
             "end",
-            "CONVERSACION FLUIDA\n"
-            "- Di 'Jarvis' una vez\n"
-            "- Sigue hablando sin repetir\n"
-            "- 'adiós' / 'nada más' = salir\n\n"
-            "MULTI-COMANDO\n"
-            "- abre Opera y Spotify\n"
-            "- abre X, pon Y en 2a pantalla\n\n"
-            "WEB & COMPARATIVAS\n"
-            "- compara iPhone vs Samsung\n"
-            "- investiga sobre...\n"
-            "- qué es mejor X o Y\n\n"
-            "SISTEMA\n"
-            "- abre / cierra [app]\n"
-            "- mueve [app] a 2a pantalla\n"
-            "- volumen al 50\n\n"
-            "MEDIA & WEB\n"
-            "- clima en Madrid\n"
-            "- top noticias\n"
-            "- busca en YouTube [tema]\n"
-            "- traduce 'frase' en idioma\n\n"
-            "ARCHIVOS\n"
-            '- accede al archivo "ruta"\n'
-            "- lee / resume el archivo\n",
+            "» CONVERSACIÓN\n"
+            "  Di 'Jarvis' → habla sin repetir\n"
+            "  'adiós' / 'nada más' → salir\n\n"
+            "» MULTI-COMANDO\n"
+            "  abre Opera y Spotify\n"
+            "  abre X, pon Y en 2a pantalla\n\n"
+            "» WEB & COMPARATIVAS\n"
+            "  compara iPhone vs Samsung\n"
+            "  háblame de [serie/película]\n"
+            "  qué es mejor X o Y\n\n"
+            "» SISTEMA\n"
+            "  abre / cierra [app]\n"
+            "  mueve [app] a 2a pantalla\n"
+            "  volumen al 50\n\n"
+            "» INFORMACIÓN\n"
+            "  clima en Madrid\n"
+            "  top noticias\n"
+            "  busca en YouTube [tema]\n"
+            "  traduce 'frase' en idioma\n"
+            "  recomiéndame [series/juegos]\n\n"
+            "» ARCHIVOS & GUARDAR\n"
+            '  accede al archivo "ruta"\n'
+            "  guárdalo en archivo → TXT\n",
         )
         self.commands_box.configure(state="disabled")
 
@@ -4201,9 +4384,10 @@ class JarvisApp(ctk.CTk):
                     {
                         "role": "system",
                         "content": (
-                            "Eres Jarvis. Resume el siguiente texto en máximo 3 frases cortas "
-                            "para ser leído en voz alta. Sé conciso y directo. "
-                            "Al final añade: 'Si desea la información completa, dígame guárdalo en archivo'."
+                            "Eres J.A.R.V.I.S. Resume el siguiente texto en máximo 3 frases naturales "
+                            "para ser leído en voz alta. Sé conciso, claro y con personalidad. "
+                            "Evita markdown o asteriscos. Habla de forma fluida. "
+                            "Al final añade: 'Si desea la información completa, señor, dígame guárdalo en archivo'."
                         ),
                     },
                     {"role": "user", "content": texto},
@@ -4546,6 +4730,32 @@ class JarvisApp(ctk.CTk):
             " segunda pantaya ": " segunda pantalla ",
             " pantaya ": " pantalla ",
             " segund pantalla ": " segunda pantalla ",
+            # More common misrecognitions
+            " hagame ": " hazme ",
+            " dimelo ": " dímelo ",
+            " cuentame ": " cuéntame ",
+            " explicame ": " explícame ",
+            " buscame ": " búscame ",
+            " ayudame ": " ayúdame ",
+            " ensename ": " enséñame ",
+            " comparame ": " compárame ",
+            " recomiendame ": " recomiéndame ",
+            " sugiereme ": " sugiéreme ",
+            " guardalo ": " guárdalo ",
+            " guardamelo ": " guárdamelo ",
+            " creame ": " créame ",
+            # More app corrections
+            " obs estudio ": " obs studio ",
+            " visual estudio ": " visual studio code ",
+            " bscode ": " vs code ",
+            " operagx ": " opera gx ",
+            " epic store ": " epic games ",
+            " whatsap ": " whatsapp ",
+            " whasap ": " whatsapp ",
+            " guasap ": " whatsapp ",
+            " wasap ": " whatsapp ",
+            " twich ": " twitch ",
+            " estim ": " steam ",
         }
         texto_normalizado = f" {texto.lower()} "
         for origen, destino in reemplazos.items():
@@ -4699,18 +4909,19 @@ class JarvisApp(ctk.CTk):
 
     def _responder_con_voz(self, comando, respuesta):
         """Send response through voice, auto-summarizing if too long."""
-        self.log(f"Jarvis: {respuesta}")
-        self.mostrar_respuesta(comando, respuesta)
+        respuesta_limpia = limpiar_texto_para_voz(respuesta)
+        self.log(f"Jarvis: {respuesta_limpia}")
+        self.mostrar_respuesta(comando, respuesta_limpia)
         self.actualizar_estado("Estado: respondiendo")
 
-        if len(respuesta) > 300:
+        if len(respuesta_limpia) > 300:
             self._ultima_respuesta_larga = respuesta
             self._ultimo_comando = comando
-            resumen_voz = self._resumir_para_voz(respuesta)
+            resumen_voz = self._resumir_para_voz(respuesta_limpia)
             self.hablar_async(resumen_voz)
         else:
             self._ultima_respuesta_larga = None
-            self.hablar_async(respuesta)
+            self.hablar_async(respuesta_limpia)
 
     def _ejecutar_comando_individual(self, comando):
         """Execute a single command with logging and voice output."""
@@ -5021,8 +5232,8 @@ class JarvisApp(ctk.CTk):
                                 "callate", "silencio",
                             ]):
                                 self._salir_modo_conversacion()
-                                self.log("Jarvis: Entendido. Estaré aquí si me necesita.")
-                                self.hablar_async("Entendido. Estaré aquí si me necesita.")
+                                self.log("Jarvis: Entendido señor. Estaré en modo espera.")
+                                self.hablar_async("Entendido señor. Estaré en modo espera.")
                                 continue
 
                             # Extract command (remove wake word if present)
@@ -5052,9 +5263,9 @@ class JarvisApp(ctk.CTk):
 
                         comando = self.extraer_comando(texto)
                         if not comando or len(comando.split()) <= 1:
-                            self.log("Jarvis: Estoy aquí. Dígame.")
+                            self.log("Jarvis: A sus órdenes, señor.")
                             self.actualizar_estado("Estado: escuchando")
-                            self.hablar_async("Estoy aquí. Dígame.")
+                            self.hablar_async("A sus órdenes, señor.")
                             try:
                                 comando = self.capturar_comando(
                                     reconocedor, source
