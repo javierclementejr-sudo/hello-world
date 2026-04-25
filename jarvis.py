@@ -4268,30 +4268,7 @@ class JarvisApp(ctk.CTk):
             self.log(">>> No detecté una orden después de 'Jarvis'.")
             return
 
-        # Check for multi-monitor commands
-        comando_lower = comando.lower()
-        if any(x in comando_lower for x in [
-            "segunda pantalla", "segundo monitor",
-            "pantalla secundaria", "monitor secundario",
-            "otra pantalla", "otro monitor",
-        ]) and any(x in comando_lower for x in ["pon", "mueve", "pasa", "lleva"]):
-            app_name = _extract_app_from_command(comando)
-            # Clean up app name
-            for noise in ["en la segunda pantalla", "a la segunda pantalla",
-                          "al segundo monitor", "en el segundo monitor",
-                          "a la pantalla secundaria", "en la pantalla secundaria"]:
-                app_name = app_name.lower().replace(noise, "").strip()
-            for prefix in ["ponmelo ", "ponme ", "ponlo ", "muévelo ", "muevelo ",
-                           "pon ", "mueve ", "pasa ", "lleva "]:
-                if app_name.startswith(prefix):
-                    app_name = app_name[len(prefix):].strip()
-            respuesta = mover_ventana_a_monitor(app_name, 1)
-            self.log(f"Jarvis: {respuesta}")
-            self.actualizar_estado("Estado: respondiendo")
-            self.hablar_async(respuesta)
-            return
-
-        # Parse multi-commands
+        # Parse multi-commands FIRST, before any single-command handling
         comandos = separar_multi_comandos(comando)
         if len(comandos) > 1:
             self.log(f">>> Multi-comando detectado: {len(comandos)} órdenes")
@@ -4309,8 +4286,39 @@ class JarvisApp(ctk.CTk):
 
         self._ejecutar_comando_individual(comando)
 
+    @staticmethod
+    def _resolver_monitor_comando(comando):
+        """Check if comando is a monitor move command; return response or None."""
+        comando_lower = comando.lower()
+        has_monitor_keyword = any(x in comando_lower for x in [
+            "segunda pantalla", "segundo monitor",
+            "pantalla secundaria", "monitor secundario",
+            "otra pantalla", "otro monitor",
+        ])
+        has_move_verb = bool(re.search(
+            r'\b(?:pon|ponme|ponlo|ponmelo|mueve|muévelo|muevelo|pasa|pasalo|pásalo|lleva)\b',
+            comando_lower,
+        ))
+        if not (has_monitor_keyword and has_move_verb):
+            return None
+        app_name = _extract_app_from_command(comando)
+        for noise in ["en la segunda pantalla", "a la segunda pantalla",
+                      "al segundo monitor", "en el segundo monitor",
+                      "a la pantalla secundaria", "en la pantalla secundaria"]:
+            app_name = app_name.lower().replace(noise, "").strip()
+        for prefix in ["ponmelo ", "ponme ", "ponlo ", "muévelo ", "muevelo ",
+                       "pon ", "mueve ", "pasa ", "lleva "]:
+            if app_name.startswith(prefix):
+                app_name = app_name[len(prefix):].strip()
+        if not app_name:
+            return None
+        return mover_ventana_a_monitor(app_name, 1)
+
     def _resolver_comando(self, comando):
         """Process a command and return the response text without side effects."""
+        monitor_resp = self._resolver_monitor_comando(comando)
+        if monitor_resp is not None:
+            return monitor_resp
         manejo_archivo = self.procesar_comando_archivo(comando)
         if manejo_archivo is not None:
             return manejo_archivo
