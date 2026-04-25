@@ -4379,13 +4379,13 @@ class JarvisApp(ctk.CTk):
     def _hablar_fallback(self, texto):
         """Fallback TTS using system speech commands."""
         self.log(">>> [VOZ] Usando fallback del sistema...")
-        texto_limpio = texto.replace('"', '\\"').replace("'", "\\'")
         try:
             if IS_WINDOWS:
+                texto_ps = texto.replace("'", "''")
                 ps_script = (
-                    f'Add-Type -AssemblyName System.Speech; '
-                    f'$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; '
-                    f'$s.Rate = 1; $s.Speak("{texto_limpio}")'
+                    "Add-Type -AssemblyName System.Speech; "
+                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                    f"$s.Rate = 1; $s.Speak('{texto_ps}')"
                 )
                 subprocess.run(
                     ["powershell", "-NoProfile", "-Command", ps_script],
@@ -4393,7 +4393,7 @@ class JarvisApp(ctk.CTk):
                 )
             else:
                 subprocess.run(
-                    ["espeak", "-v", "es", texto_limpio],
+                    ["espeak", "-v", "es", texto],
                     timeout=60, capture_output=True,
                 )
             self.log(">>> [VOZ] Fallback completado.")
