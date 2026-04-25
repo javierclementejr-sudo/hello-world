@@ -4320,6 +4320,9 @@ class JarvisApp(ctk.CTk):
         threading.Thread(target=self._hablar, args=(texto,), daemon=True).start()
 
     def _hablar(self, texto):
+        if not texto or not texto.strip():
+            return
+        self.log(f">>> [VOZ] Iniciando TTS: {texto[:80]}...")
         with self.tts_lock:
             try:
                 self.ia_hablando.set()
@@ -4327,7 +4330,19 @@ class JarvisApp(ctk.CTk):
                 threading.Thread(
                     target=self._monitor_voice_interrupt, daemon=True
                 ).start()
+                self._hablar_pyttsx3(texto)
+            except Exception as e:
+                self.log(f">>> [VOZ] pyttsx3 falló: {e}")
+                self._hablar_fallback(texto)
+            finally:
+                self.ia_hablando.clear()
+                self._interrupt_monitor_active.clear()
+                self.tts_engine = None
 
+    def _hablar_pyttsx3(self, texto):
+        """Primary TTS via pyttsx3 with retry logic."""
+        for intento in range(2):
+            try:
                 engine = pyttsx3.init()
                 if not self.voice_id:
                     self.voice_id = elegir_voz_masculina(engine)
@@ -4341,15 +4356,49 @@ class JarvisApp(ctk.CTk):
                 self.tts_engine = engine
                 engine.say(texto)
                 engine.runAndWait()
-                engine.stop()
-            except RuntimeError:
-                pass
-            except Exception as e:
-                self.log(f">>> Error al hablar: {e}")
-            finally:
-                self.ia_hablando.clear()
-                self._interrupt_monitor_active.clear()
+                try:
+                    engine.stop()
+                except Exception:
+                    pass
+                self.log(">>> [VOZ] TTS completado.")
+                return
+            except RuntimeError as e:
+                self.log(f">>> [VOZ] RuntimeError (intento {intento+1}): {e}")
+                try:
+                    engine.stop()
+                except Exception:
+                    pass
                 self.tts_engine = None
+                time.sleep(0.3)
+            except Exception as e:
+                self.log(f">>> [VOZ] Error pyttsx3 (intento {intento+1}): {e}")
+                self.tts_engine = None
+                time.sleep(0.3)
+        raise RuntimeError("pyttsx3 failed after retries")
+
+    def _hablar_fallback(self, texto):
+        """Fallback TTS using system speech commands."""
+        self.log(">>> [VOZ] Usando fallback del sistema...")
+        texto_limpio = texto.replace('"', '\\"').replace("'", "\\'")
+        try:
+            if IS_WINDOWS:
+                ps_script = (
+                    f'Add-Type -AssemblyName System.Speech; '
+                    f'$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; '
+                    f'$s.Rate = 1; $s.Speak("{texto_limpio}")'
+                )
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_script],
+                    timeout=60, capture_output=True,
+                )
+            else:
+                subprocess.run(
+                    ["espeak", "-v", "es", texto_limpio],
+                    timeout=60, capture_output=True,
+                )
+            self.log(">>> [VOZ] Fallback completado.")
+        except Exception as e:
+            self.log(f">>> [VOZ] Fallback también falló: {e}")
 
     def _monitor_voice_interrupt(self):
         """Monitors microphone while TTS is speaking; stops TTS and captures what user said."""
@@ -4389,10 +4438,7 @@ class JarvisApp(ctk.CTk):
 
     def detener_voz(self):
         self._interrupt_monitor_active.clear()
-        engine = None
-        with self.tts_lock:
-            engine = self.tts_engine
-
+        engine = self.tts_engine
         if engine:
             try:
                 engine.stop()
