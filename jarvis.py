@@ -1014,8 +1014,8 @@ def mover_ventana_a_monitor(nombre, monitor_idx=1):
                 return 1
 
             MONITORENUMPROC = ctypes.WINFUNCTYPE(
-                ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
-                ctypes.POINTER(ctypes.wintypes.RECT), ctypes.c_double
+                ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+                ctypes.POINTER(ctypes.wintypes.RECT), ctypes.wintypes.LPARAM
             )
             user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(callback), 0)
 
@@ -4298,7 +4298,7 @@ class JarvisApp(ctk.CTk):
             resultados = []
             for i, cmd in enumerate(comandos):
                 self.log(f">>> Ejecutando [{i+1}/{len(comandos)}]: {cmd}")
-                resultado = self._ejecutar_comando_individual(cmd)
+                resultado = self._resolver_comando(cmd)
                 resultados.append(resultado)
                 time.sleep(0.5)
             resumen = ". ".join(resultados)
@@ -4309,16 +4309,16 @@ class JarvisApp(ctk.CTk):
 
         self._ejecutar_comando_individual(comando)
 
-    def _ejecutar_comando_individual(self, comando):
-        """Execute a single command and return the response text."""
+    def _resolver_comando(self, comando):
+        """Process a command and return the response text without side effects."""
         manejo_archivo = self.procesar_comando_archivo(comando)
         if manejo_archivo is not None:
-            self.log(f"Jarvis: {manejo_archivo}")
-            self.actualizar_estado("Estado: respondiendo")
-            self.hablar_async(manejo_archivo)
             return manejo_archivo
+        return consultar_ia(comando, self.historial)
 
-        respuesta = consultar_ia(comando, self.historial)
+    def _ejecutar_comando_individual(self, comando):
+        """Execute a single command with logging and voice output."""
+        respuesta = self._resolver_comando(comando)
         self.log(f"Jarvis: {respuesta}")
         self.actualizar_estado("Estado: respondiendo")
         self.hablar_async(respuesta)
