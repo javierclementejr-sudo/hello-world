@@ -1,4 +1,5 @@
 import difflib
+import glob
 import json
 import math
 import os
@@ -399,13 +400,17 @@ def cargar_memoria():
         {
             "role": "system",
             "content": (
-                "Eres Jarvis, un asistente inteligente con acceso al PC, archivos, "
-                "pantalla, automatizacion de escritorio y busqueda web avanzada. "
+                "Eres Jarvis, un asistente inteligente estilo Iron Man con acceso al PC, "
+                "archivos, pantalla, automatizacion de escritorio y busqueda web avanzada. "
                 "Puedes hacer comparativas entre productos, tecnologias, paises, "
-                "deportistas, o cualquier tema usando informacion de internet. "
+                "deportistas, celebridades, o cualquier tema usando informacion de internet. "
                 "Se breve, directo y prioriza ejecutar acciones. "
-                "Siempre responde en español. Cuando el usuario pida comparar cosas, "
-                "busca informacion actualizada en la web y presenta datos concretos."
+                "Siempre responde en español y siempre dirígete al usuario como 'señor'. "
+                "Cuando el usuario pregunte sobre una persona famosa, celebridad, deportista, "
+                "actor, político, etc., da información PRECISA y VERIFICADA: nombre completo, "
+                "nacionalidad, profesión, logros principales y datos relevantes. "
+                "Cuando el usuario pida traducir, da SOLO la traducción exacta. "
+                "Nunca inventes datos. Si no estás seguro, dilo."
             ),
         }
     ]
@@ -647,6 +652,35 @@ def convertir_unidades(comando_original):
     return None
 
 
+IDIOMAS_MAP = {
+    "inglés": "en", "ingles": "en", "english": "en",
+    "francés": "fr", "frances": "fr", "french": "fr",
+    "alemán": "de", "aleman": "de", "german": "de",
+    "italiano": "it", "italian": "it",
+    "portugués": "pt", "portugues": "pt", "portuguese": "pt",
+    "japonés": "ja", "japones": "ja", "japanese": "ja",
+    "chino": "zh", "chinese": "zh", "mandarín": "zh", "mandarin": "zh",
+    "coreano": "ko", "korean": "ko",
+    "ruso": "ru", "russian": "ru",
+    "árabe": "ar", "arabe": "ar", "arabic": "ar",
+    "hindi": "hi",
+    "turco": "tr", "turkish": "tr",
+    "polaco": "pl", "polish": "pl",
+    "holandés": "nl", "holandes": "nl", "dutch": "nl",
+    "sueco": "sv", "swedish": "sv",
+    "catalán": "ca", "catalan": "ca",
+    "griego": "el", "greek": "el",
+    "hebreo": "he", "hebrew": "he",
+    "tailandés": "th", "tailandes": "th",
+    "vietnamita": "vi", "vietnamese": "vi",
+    "rumano": "ro", "romanian": "ro",
+    "checo": "cs", "czech": "cs",
+    "húngaro": "hu", "hungaro": "hu", "hungarian": "hu",
+    "español": "es", "espanol": "es", "spanish": "es",
+    "latín": "la", "latin": "la",
+}
+
+
 def traducir_texto(comando_original):
     texto = comando_original.strip()
     frase = ""
@@ -657,28 +691,57 @@ def traducir_texto(comando_original):
         resto = texto[m.end() :].lower().replace("?", "").strip()
         if " en " in resto:
             idioma = resto.split(" en ", 1)[1].strip()
+        elif " al " in resto:
+            idioma = resto.split(" al ", 1)[1].strip()
+        elif " a " in resto:
+            idioma = resto.split(" a ", 1)[1].strip()
     if not frase and "traduce " in texto.lower():
         resto = texto.lower().split("traduce ", 1)[1]
         if " al " in resto:
             frase, idioma = resto.split(" al ", 1)
         elif " en " in resto:
             frase, idioma = resto.split(" en ", 1)
+        elif " a " in resto:
+            frase, idioma = resto.split(" a ", 1)
         frase = frase.strip(" .,:;")
         idioma = idioma.strip(" .,:;?")
+    if not frase and "como se dice" in texto.lower():
+        resto = texto.lower().split("como se dice", 1)[1].strip()
+        if " en " in resto:
+            frase, idioma = resto.split(" en ", 1)
+        frase = frase.strip(" .,:;?")
+        idioma = idioma.strip(" .,:;?")
+    if not frase and "cómo se dice" in texto.lower():
+        resto = texto.lower().split("cómo se dice", 1)[1].strip()
+        if " en " in resto:
+            frase, idioma = resto.split(" en ", 1)
+        frase = frase.strip(" .,:;?")
+        idioma = idioma.strip(" .,:;?")
     if not frase or not idioma:
-        return "Usa: traduce 'tengo hambre' en japonés."
+        return "Usa: traduce 'tengo hambre' en japonés. O: cómo se dice hola en inglés."
 
-    prompt = f"Traduce al {idioma} esta frase y dame solo la traducción: {frase}"
+    idioma_clean = idioma.strip().lower()
+    idioma_code = IDIOMAS_MAP.get(idioma_clean, "")
+
+    prompt = (
+        f"Eres un traductor profesional. Traduce la siguiente frase al {idioma}. "
+        f"Responde SOLO con la traducción exacta, sin explicaciones ni notas adicionales.\n\n"
+        f"Frase: {frase}"
+    )
     try:
         cliente_groq = obtener_cliente_groq()
         if cliente_groq:
             completion = cliente_groq.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": "Eres un traductor profesional. Solo responde con la traducción exacta."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
             )
             respuesta = (completion.choices[0].message.content or "").strip()
             if respuesta:
-                return respuesta
+                return f"'{frase}' en {idioma}: {respuesta}"
     except Exception:
         pass
     if ollama is not None:
@@ -689,13 +752,14 @@ def traducir_texto(comando_original):
             )
             respuesta = (response["message"]["content"] or "").strip()
             if respuesta:
-                return respuesta
+                return f"'{frase}' en {idioma}: {respuesta}"
         except Exception:
             pass
+    tl = idioma_code or "auto"
     webbrowser.open(
-        f"https://translate.google.com/?sl=auto&tl=auto&text={quote_plus(frase)}&op=translate"
+        f"https://translate.google.com/?sl=auto&tl={tl}&text={quote_plus(frase)}&op=translate"
     )
-    return "No pude traducir ahora; abrí Google Translate."
+    return f"No pude traducir ahora; abrí Google Translate para '{frase}' en {idioma}."
 
 
 def calcular_rapido(comando_original):
@@ -923,11 +987,19 @@ def normalizar_nombre_app(nombre):
         "aplicacion ": "",
         "aplicación ": "",
         "programa ": "",
+        "un ": "",
+        "una ": "",
+        "mi ": "",
     }
     for prefijo, reemplazo in reemplazos.items():
         if nombre.startswith(prefijo):
             nombre = nombre.replace(prefijo, reemplazo, 1)
-    return nombre.strip()
+    nombre = nombre.strip()
+    if nombre.endswith(".exe"):
+        nombre_sin_ext = nombre[:-4]
+        if nombre_sin_ext in APLICACIONES_CONOCIDAS:
+            return nombre_sin_ext
+    return nombre
 
 
 def info_app(nombre):
@@ -1222,20 +1294,55 @@ def activar_ventana(nombre):
 
 
 def abrir_aplicacion(nombre):
-    cmd = obtener_comando_lanzamiento(nombre)
+    nombre_clean = nombre.strip().strip('"').strip("'")
+    cmd = obtener_comando_lanzamiento(nombre_clean)
+
     if IS_WINDOWS:
+        # Try os.startfile first (handles .exe, .lnk, URLs, etc.)
         try:
             os.startfile(cmd)
-            return f"He abierto {nombre}."
+            return f"He abierto {nombre_clean}."
         except Exception:
             pass
+        # Try finding the .exe in common paths
+        if not cmd.endswith(".exe"):
+            exe_name = cmd + ".exe"
+        else:
+            exe_name = cmd
+        search_paths = [
+            os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "**", exe_name),
+            os.path.join(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"), "**", exe_name),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "**", exe_name),
+            os.path.join(os.environ.get("APPDATA", ""), "**", exe_name),
+        ]
+        for pattern in search_paths:
+            if not pattern:
+                continue
+            matches = glob.glob(pattern, recursive=True)
+            if matches:
+                try:
+                    os.startfile(matches[0])
+                    return f"He abierto {nombre_clean}."
+                except Exception:
+                    continue
+        # Try Start-Process as last resort
+        try:
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", f"Start-Process '{cmd}'"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            return f"He lanzado {nombre_clean}."
+        except Exception:
+            pass
+
+    # Linux / generic fallback
     try:
         subprocess.Popen(
             [cmd],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        return f"He abierto {nombre}."
+        return f"He abierto {nombre_clean}."
     except Exception:
         try:
             subprocess.Popen(
@@ -1244,9 +1351,9 @@ def abrir_aplicacion(nombre):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            return f"He lanzado {nombre}."
+            return f"He lanzado {nombre_clean}."
         except Exception as e:
-            return f"No pude abrir {nombre}: {e}"
+            return f"No pude abrir {nombre_clean}: {e}"
 
 
 def _obtener_dispositivo_audio():
@@ -1456,23 +1563,28 @@ def abrir_recurso(destino):
         return f"No pude abrir '{destino}': {e}"
 
 
-def ejecutar_comando_sistema(comando):
-    """Cross-platform command execution."""
+def ejecutar_comando_sistema(comando, como_admin=False):
+    """Cross-platform command execution with optional admin elevation."""
     try:
         if IS_WINDOWS:
-            resultado = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", comando],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+            if como_admin:
+                resultado = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     f"Start-Process powershell -ArgumentList '-NoProfile','-Command','{comando}' -Verb RunAs -Wait"],
+                    capture_output=True, text=True, timeout=60,
+                )
+            else:
+                resultado = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", comando],
+                    capture_output=True, text=True, timeout=30,
+                )
         else:
             resultado = subprocess.run(
                 ["bash", "-c", comando],
-                capture_output=True,
-                text=True,
-                timeout=30,
+                capture_output=True, text=True, timeout=30,
             )
+    except subprocess.TimeoutExpired:
+        return "El comando tardó demasiado y fue cancelado."
     except Exception as e:
         return f"No pude ejecutar el comando: {e}"
 
@@ -1481,6 +1593,11 @@ def ejecutar_comando_sistema(comando):
 
     if resultado.returncode == 0:
         return salida or "Comando ejecutado correctamente."
+
+    if "acceso denegado" in error.lower() or "access denied" in error.lower():
+        if not como_admin:
+            return ejecutar_comando_sistema(comando, como_admin=True)
+        return f"Necesito permisos de administrador para ejecutar este comando: {error}"
 
     if error:
         return f"El comando falló: {error}"
@@ -2540,12 +2657,18 @@ def ejecutar_accion_local(comando):
                     consulta = resto[indice + len(separador) :].strip()
                     return buscar_en_sitio_web(sitio, consulta)
 
-        if comando_lower.startswith(("abre ", "abrir ")):
-            destino = comando_original.split(" ", 1)[1]
+        if comando_lower.startswith(("abre ", "abrir ", "ábreme ", "abreme ", "ábrelo ", "ejecuta ", "lanza ")):
+            for prefix in ["ábreme ", "abreme ", "ábrelo ", "abre ", "abrir ", "ejecuta ", "lanza "]:
+                if comando_lower.startswith(prefix):
+                    destino = comando_original[len(prefix):].strip()
+                    break
             return abrir_aplicacion(destino)
 
-        if comando_lower.startswith(("cierra ", "cerrar ")):
-            destino = comando_original.split(" ", 1)[1]
+        if comando_lower.startswith(("cierra ", "cerrar ", "ciérrame ", "cierrame ")):
+            for prefix in ["ciérrame ", "cierrame ", "cierra ", "cerrar "]:
+                if comando_lower.startswith(prefix):
+                    destino = comando_original[len(prefix):].strip()
+                    break
             return cerrar_aplicacion(destino)
 
         if comando_lower.startswith(("enfoca ", "activa ", "pon al frente ")):
@@ -2805,6 +2928,11 @@ def ejecutar_accion_local(comando):
                 "apagar pc",
                 "shutdown",
                 "apaga la pc",
+                "apaga el pc",
+                "apagar el ordenador",
+                "apagar ordenador",
+                "apaga el equipo",
+                "apagar equipo",
             ]
         ):
             if IS_WINDOWS:
@@ -2820,6 +2948,11 @@ def ejecutar_accion_local(comando):
                 "reiniciar pc",
                 "restart",
                 "reinicia la pc",
+                "reinicia el pc",
+                "reiniciar el ordenador",
+                "reiniciar ordenador",
+                "reinicia el equipo",
+                "reiniciar equipo",
             ]
         ):
             if IS_WINDOWS:
@@ -2980,17 +3113,21 @@ def ejecutar_accion_local(comando):
     except Exception as e:
         return mensaje_error_amigable(str(e), "esa acción del sistema")
 
-    if any(x in comando_lower for x in ["quien es", "que es", "define"]):
-        try:
-            termino = (
-                comando_lower.replace("quien es", "")
-                .replace("que es", "")
-                .replace("define", "")
-                .strip()
+    if any(x in comando_lower for x in ["quien es", "quién es", "que es", "qué es", "define", "háblame de", "hablame de", "dime quien es", "dime quién es"]):
+        termino = comando_lower
+        for prefix in ["quien es", "quién es", "que es", "qué es", "define",
+                       "háblame de", "hablame de", "dime quien es", "dime quién es"]:
+            termino = termino.replace(prefix, "").strip()
+        if termino:
+            info_web = buscar_informacion_web(termino, max_results=5)
+            prompt = (
+                f"El usuario pregunta: '{comando_original}'\n\n"
+                f"Información encontrada en internet y Wikipedia:\n{info_web}\n\n"
+                f"Da una respuesta completa, precisa y detallada sobre '{termino}'. "
+                f"Incluye datos relevantes: quién es, qué hace, datos importantes, "
+                f"fechas, logros, nacionalidad, etc. Responde en español."
             )
-            return f"Según Wikipedia: {wikipedia.summary(termino, sentences=2)}"
-        except Exception:
-            pass
+            return consultar_ia_directa(prompt)
 
     # Enhanced web search fallback
     if any(
@@ -3184,13 +3321,15 @@ def consultar_ia_directa(prompt):
                     "role": "system",
                     "content": (
                         "Eres Jarvis, asistente inteligente estilo Iron Man. "
-                        "Responde en español, breve y con datos concretos. "
-                        "Puedes hacer comparativas detalladas."
+                        "Responde en español, breve y con datos concretos y verificados. "
+                        "Si hay información de internet en el prompt, úsala como fuente principal. "
+                        "Nunca inventes datos sobre personas, celebridades o eventos. "
+                        "Puedes hacer comparativas detalladas. Dirígete al usuario como 'señor'."
                     ),
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
+            temperature=0.2,
         )
         respuesta = (completion.choices[0].message.content or "").strip()
         if respuesta:
@@ -3243,6 +3382,32 @@ def consultar_ia(pregunta, historial):
             "2024",
             "2025",
             "2026",
+            "quien es",
+            "quién es",
+            "que es",
+            "qué es",
+            "cuantos años",
+            "cuántos años",
+            "donde nacio",
+            "dónde nació",
+            "de donde es",
+            "de dónde es",
+            "biografia",
+            "biografía",
+            "historia de",
+            "cuanto gana",
+            "cuánto gana",
+            "cuanto mide",
+            "cuánto mide",
+            "cuanto pesa",
+            "cuánto pesa",
+            "cuantos goles",
+            "cuántos goles",
+            "palmares",
+            "palmarés",
+            "premios",
+            "filmografia",
+            "filmografía",
         ]
     )
 
@@ -4171,6 +4336,7 @@ class JarvisApp(ctk.CTk):
             return ""
 
         reemplazos = {
+            # Wake word corrections
             " jarviss": " jarvis",
             " yarvis": " jarvis",
             " jervis": " jarvis",
@@ -4179,11 +4345,67 @@ class JarvisApp(ctk.CTk):
             " yarbi ": " jarvis ",
             " harvis": " jarvis",
             " harvest": " jarvis",
+            " javis": " jarvis",
+            " jarves": " jarvis",
+            " jarbis": " jarvis",
+            " jarbs": " jarvis",
+            " yarbis": " jarvis",
+            " charvis": " jarvis",
+            " jarvi ": " jarvis ",
+            " garvis": " jarvis",
+            " darvis": " jarvis",
+            " tarvis": " jarvis",
+            " jarviz": " jarvis",
+            # Common Spanish misrecognitions
             " mostrarme ": " muéstrame ",
             " muestrame ": " muéstrame ",
             " trailer ": " tráiler ",
             " cancion ": " canción ",
             " reproduccion ": " reproducción ",
+            " informacion ": " información ",
+            " comparacion ": " comparación ",
+            " volumen ": " volumen ",
+            " aplicacion ": " aplicación ",
+            " tambien ": " también ",
+            " musica ": " música ",
+            " pelicula ": " película ",
+            " peliculas ": " películas ",
+            " asi ": " así ",
+            " pagina ": " página ",
+            " abreme ": " ábre ",
+            " cierrame ": " cierra ",
+            " ponme ": " pon ",
+            # Common verb confusions
+            " habre ": " abre ",
+            " habreme ": " ábre ",
+            " habrir ": " abrir ",
+            " ciérralo ": " cierra ",
+            " cierrale ": " cierra ",
+            # App name corrections
+            " espotifai ": " spotify ",
+            " espotify ": " spotify ",
+            " spotifai ": " spotify ",
+            " crome ": " chrome ",
+            " cromo ": " chrome ",
+            " gugle ": " google ",
+            " guguel ": " google ",
+            " discor ": " discord ",
+            " discort ": " discord ",
+            # Number corrections (common in Spanish speech)
+            " diez ": " 10 ",
+            " veinte ": " 20 ",
+            " treinta ": " 30 ",
+            " cuarenta ": " 40 ",
+            " cincuenta ": " 50 ",
+            " sesenta ": " 60 ",
+            " setenta ": " 70 ",
+            " ochenta ": " 80 ",
+            " noventa ": " 90 ",
+            " cien ": " 100 ",
+            # Direction corrections
+            " segunda pantaya ": " segunda pantalla ",
+            " pantaya ": " pantalla ",
+            " segund pantalla ": " segunda pantalla ",
         }
         texto_normalizado = f" {texto.lower()} "
         for origen, destino in reemplazos.items():
@@ -4620,7 +4842,11 @@ class JarvisApp(ctk.CTk):
                                 "hasta luego", "adiós", "adios", "nos vemos",
                                 "eso es todo", "nada más", "nada mas",
                                 "puedes descansar", "deja de escuchar",
-                                "modo espera", "standby",
+                                "modo espera", "standby", "ya está",
+                                "ya esta", "gracias jarvis", "vale gracias",
+                                "ok gracias", "chao", "bye",
+                                "descansa", "para ya", "cállate",
+                                "callate", "silencio",
                             ]):
                                 self._salir_modo_conversacion()
                                 self.log("Jarvis: Entendido. Estaré aquí si me necesita.")
