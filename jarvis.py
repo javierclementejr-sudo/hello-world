@@ -7,6 +7,7 @@ import platform
 import re
 import shlex
 import shutil
+import sys
 import subprocess
 import threading
 import time
@@ -3445,6 +3446,24 @@ def ejecutar_accion_local(comando):
     }:
         return borrar_seleccion()
 
+    if any(x in comando_lower for x in [
+        "inicia con windows", "inicia con el pc", "inicio automático",
+        "inicio automatico", "arranca con windows", "arranca con el pc",
+        "ejecuta al encender", "activa inicio automático", "activa inicio automatico",
+    ]):
+        ok = configurar_inicio_automatico()
+        if ok:
+            return "Listo señor. A partir de ahora me ejecutaré automáticamente al encender el PC."
+        return "No pude configurar el inicio automático, señor."
+
+    if any(x in comando_lower for x in [
+        "desactiva inicio automático", "desactiva inicio automatico",
+        "no arranques con windows", "no inicies con el pc",
+        "quita inicio automático", "quita inicio automatico",
+    ]):
+        desactivar_inicio_automatico()
+        return "Inicio automático desactivado, señor. Ya no me ejecutaré al encender el PC."
+
     return None
 
 
@@ -3678,7 +3697,9 @@ class JarvisApp(ctk.CTk):
         self._scan_offset = 0
         self._interrupt_monitor_active = threading.Event()
         self.modo_conversacion = threading.Event()
-        self._conversation_timeout = 30
+        self._conversation_timeout = 60
+        self._silence_count = 0
+        self._max_silence_before_exit = 3
         self._last_interaction_time = 0
         self._interrupted_text = None
         self._ultima_respuesta_larga = None
@@ -3748,7 +3769,7 @@ class JarvisApp(ctk.CTk):
 
         self.subtitle = ctk.CTkLabel(
             self.title_block,
-            text="Just A Rather Very Intelligent System  //  v4.3.0-MARK-VII",
+            text="Just A Rather Very Intelligent System  //  v5.1.0-MARK-VIII",
             font=("Consolas", 11),
             text_color="#5a8a9e",
         )
@@ -4355,7 +4376,10 @@ class JarvisApp(ctk.CTk):
             "  recomiéndame [series/juegos]\n\n"
             "» ARCHIVOS & GUARDAR\n"
             '  accede al archivo "ruta"\n'
-            "  guárdalo en archivo → TXT\n",
+            "  guárdalo en archivo → TXT\n\n"
+            "» CONTROL\n"
+            "  no necesito nada más → cerrar\n"
+            "  inicia con Windows → autostart\n",
         )
         self.commands_box.configure(state="disabled")
 
@@ -4922,6 +4946,7 @@ class JarvisApp(ctk.CTk):
         else:
             self._ultima_respuesta_larga = None
             self.hablar_async(respuesta_limpia)
+        self._renovar_conversacion()
 
     def _ejecutar_comando_individual(self, comando):
         """Execute a single command with logging and voice output."""
@@ -5204,7 +5229,7 @@ class JarvisApp(ctk.CTk):
                             time.sleep(0.2)
                             continue
 
-                        timeout = 8 if en_conversacion else 1
+                        timeout = 15 if en_conversacion else 1
                         audio = reconocedor.listen(
                             source, timeout=timeout, phrase_time_limit=30
                         )
@@ -5218,9 +5243,23 @@ class JarvisApp(ctk.CTk):
                         if en_conversacion:
                             # In conversation mode: process anything, no wake word needed
                             self._renovar_conversacion()
+                            self._silence_count = 0
 
-                            # Check for exit phrases
+                            # Check for shutdown phrases (close app entirely)
                             texto_lower = texto.lower()
+                            if any(x in texto_lower for x in [
+                                "no necesito nada más", "no necesito nada mas",
+                                "no te necesito", "apágate", "apagate",
+                                "ciérrate", "cierrate", "termina jarvis",
+                                "cierra jarvis", "apaga jarvis",
+                            ]):
+                                self.log("Jarvis: Ha sido un placer, señor. Cerrando sistemas.")
+                                self.hablar_async("Ha sido un placer, señor. Cerrando sistemas.")
+                                time.sleep(3)
+                                self.after(500, self.cerrar_app)
+                                return
+
+                            # Check for exit phrases (just exit conversation mode)
                             if any(x in texto_lower for x in [
                                 "hasta luego", "adiós", "adios", "nos vemos",
                                 "eso es todo", "nada más", "nada mas",
@@ -5279,8 +5318,12 @@ class JarvisApp(ctk.CTk):
                             self.procesar_comando(comando)
                     except sr.WaitTimeoutError:
                         if en_conversacion:
-                            # Timeout in conversation = exit conversation
-                            self._salir_modo_conversacion()
+                            self._silence_count += 1
+                            if self._silence_count >= self._max_silence_before_exit:
+                                self._salir_modo_conversacion()
+                                self._silence_count = 0
+                                self.log("Jarvis: Modo conversación finalizado por inactividad.")
+                                self.hablar_async("Estaré aquí si me necesita, señor.")
                         continue
                     except sr.UnknownValueError:
                         continue
@@ -5301,6 +5344,58 @@ class JarvisApp(ctk.CTk):
         self.destroy()
 
 
+def configurar_inicio_automatico():
+    """Configure Jarvis to start automatically when Windows boots."""
+    if not IS_WINDOWS:
+        print("El inicio automático solo está disponible en Windows.")
+        return False
+    try:
+        import winreg
+        script_path = os.path.abspath(__file__)
+        python_path = sys.executable
+        comando = f'"{python_path}" "{script_path}"'
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0, winreg.KEY_SET_VALUE,
+        )
+        winreg.SetValueEx(key, "Jarvis", 0, winreg.REG_SZ, comando)
+        winreg.CloseKey(key)
+        print("Jarvis configurado para iniciar con Windows.")
+        return True
+    except Exception as e:
+        print(f"No se pudo configurar el inicio automático: {e}")
+        return False
+
+
+def desactivar_inicio_automatico():
+    """Remove Jarvis from Windows startup."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0, winreg.KEY_SET_VALUE,
+        )
+        try:
+            winreg.DeleteValue(key, "Jarvis")
+        except FileNotFoundError:
+            pass
+        winreg.CloseKey(key)
+        return True
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
+    if "--autostart" in sys.argv:
+        configurar_inicio_automatico()
+        sys.exit(0)
+    if "--no-autostart" in sys.argv:
+        desactivar_inicio_automatico()
+        print("Inicio automático desactivado.")
+        sys.exit(0)
     app = JarvisApp()
     app.mainloop()
