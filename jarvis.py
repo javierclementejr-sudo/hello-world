@@ -5,6 +5,7 @@ import math
 import os
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import threading
@@ -1446,7 +1447,7 @@ def abrir_aplicacion(nombre):
     # Linux / generic fallback
     try:
         subprocess.Popen(
-            [cmd],
+            shlex.split(cmd),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
