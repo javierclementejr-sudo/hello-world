@@ -404,7 +404,9 @@ def cargar_memoria():
                 "archivos, pantalla, automatizacion de escritorio y busqueda web avanzada. "
                 "Puedes hacer comparativas entre productos, tecnologias, paises, "
                 "deportistas, celebridades, o cualquier tema usando informacion de internet. "
-                "Se breve, directo y prioriza ejecutar acciones. "
+                "IMPORTANTE: Todas tus respuestas se leen en voz alta. Sé conciso y directo. "
+                "Evita listas muy largas, formatos complejos o texto excesivo. "
+                "Si la información es extensa, da un resumen claro en máximo 3-4 frases. "
                 "Siempre responde en español y siempre dirígete al usuario como 'señor'. "
                 "Cuando el usuario pregunte sobre una persona famosa, celebridad, deportista, "
                 "actor, político, etc., da información PRECISA y VERIFICADA: nombre completo, "
@@ -3332,7 +3334,8 @@ def consultar_ia_directa(prompt):
                     "role": "system",
                     "content": (
                         "Eres Jarvis, asistente inteligente estilo Iron Man. "
-                        "Responde en español, breve y con datos concretos y verificados. "
+                        "IMPORTANTE: Tu respuesta se lee en voz alta. Sé breve y conciso. "
+                        "Responde en español con datos concretos y verificados. "
                         "Si hay información de internet en el prompt, úsala como fuente principal. "
                         "Nunca inventes datos sobre personas, celebridades o eventos. "
                         "Puedes hacer comparativas detalladas. Dirígete al usuario como 'señor'."
@@ -3498,6 +3501,13 @@ class JarvisApp(ctk.CTk):
         self._conversation_timeout = 30
         self._last_interaction_time = 0
         self._interrupted_text = None
+        self._ultima_respuesta_larga = None
+        self._ultimo_comando = None
+        self.RUTA_GUARDAR_TXT = os.path.join(
+            "C:\\Users\\Javi\\Desktop\\jarvis\\cosas"
+            if IS_WINDOWS
+            else os.path.expanduser("~/jarvis/cosas")
+        )
 
         try:
             engine = pyttsx3.init()
@@ -3661,7 +3671,7 @@ class JarvisApp(ctk.CTk):
             "<Configure>", lambda _: self._draw_reactor(self.reactor_mode)
         )
 
-        # === COMMAND CONSOLE ===
+        # === JARVIS RESPONSE PANEL ===
         self.console_frame = ctk.CTkFrame(
             self.shell_frame,
             fg_color="#020610",
@@ -3673,7 +3683,7 @@ class JarvisApp(ctk.CTk):
             row=1, column=0, sticky="nsew", padx=(10, 5), pady=(0, 10)
         )
         self.console_frame.grid_columnconfigure(0, weight=1)
-        self.console_frame.grid_rowconfigure(1, weight=1)
+        self.console_frame.grid_rowconfigure(2, weight=1)
 
         self.console_top = ctk.CTkFrame(
             self.console_frame, fg_color="transparent"
@@ -3683,7 +3693,7 @@ class JarvisApp(ctk.CTk):
 
         self.console_title = ctk.CTkLabel(
             self.console_top,
-            text="COMMAND FEED",
+            text="JARVIS RESPONSE",
             font=("Consolas", 12, "bold"),
             text_color="#00d4ff",
         )
@@ -3691,13 +3701,25 @@ class JarvisApp(ctk.CTk):
 
         self.console_hint = ctk.CTkLabel(
             self.console_top,
-            text="Voice + Text",
+            text="Voice Output Active",
             font=("Consolas", 10),
-            text_color="#5a8a9e",
+            text_color="#00ff88",
         )
         self.console_hint.grid(row=0, column=1, sticky="e")
 
-        self.textbox = ctk.CTkTextbox(
+        # User query display
+        self.query_label = ctk.CTkLabel(
+            self.console_frame,
+            text="",
+            font=("Consolas", 11),
+            text_color="#5a8a9e",
+            anchor="w",
+            wraplength=550,
+        )
+        self.query_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(2, 2))
+
+        # Main response display
+        self.response_textbox = ctk.CTkTextbox(
             self.console_frame,
             font=("Consolas", 13),
             fg_color="#010409",
@@ -3709,21 +3731,29 @@ class JarvisApp(ctk.CTk):
             scrollbar_button_hover_color="#ff6b35",
             wrap="word",
         )
-        self.textbox.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        self.textbox.insert(
+        self.response_textbox.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 6))
+        self.response_textbox.insert(
             "end",
-            ">>> STARK OS v4.3.0 // BOOT SEQUENCE INITIATED\n"
-            ">>> NEURAL CORE................ [ONLINE]\n"
-            ">>> VOICE ENGINE............... [ARMED]\n"
-            ">>> CONVERSATION MODE.......... [READY]\n"
-            ">>> MULTI-COMMAND ENGINE....... [ACTIVE]\n"
-            ">>> WEB SEARCH MODULE.......... [ACTIVE]\n"
-            ">>> COMPARISON ENGINE.......... [READY]\n"
-            ">>> MULTI-MONITOR.............. [LINKED]\n"
-            ">>> VOICE INTERRUPT SYSTEM..... [ACTIVE]\n"
-            ">>> ALL SYSTEMS NOMINAL\n"
-            '>>> Di "Jarvis" para iniciar conversación fluida\n\n',
+            "STARK OS v4.3.0 // ALL SYSTEMS NOMINAL\n\n"
+            'Di "Jarvis" para iniciar conversación.\n'
+            "Todas las respuestas se dan por voz.\n"
+            "Si la respuesta es larga, recibirás un resumen.\n"
+            'Di "guárdalo en archivo" para guardar la respuesta completa.',
         )
+
+        # Hidden log textbox for internal logging
+        self.textbox = ctk.CTkTextbox(
+            self.console_frame,
+            font=("Consolas", 10),
+            fg_color="#010409",
+            text_color="#5a8a9e",
+            border_color="#0a3d5c",
+            border_width=1,
+            corner_radius=8,
+            height=60,
+            wrap="word",
+        )
+        self.textbox.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
 
         # === SIDE PANEL ===
         self.side_frame = ctk.CTkFrame(
@@ -4150,6 +4180,59 @@ class JarvisApp(ctk.CTk):
         self.textbox.insert("end", f"{mensaje}\n")
         self.textbox.see("end")
 
+    def mostrar_respuesta(self, pregunta, respuesta):
+        """Update the response panel with the latest Jarvis response."""
+        def _actualizar():
+            self.query_label.configure(text=f">> {pregunta}")
+            self.response_textbox.delete("1.0", "end")
+            self.response_textbox.insert("end", respuesta)
+            self.response_textbox.see("1.0")
+        self.after(0, _actualizar)
+
+    def _resumir_para_voz(self, texto):
+        """Summarize a long response for voice output using AI."""
+        try:
+            cliente_groq = obtener_cliente_groq()
+            if not cliente_groq:
+                raise RuntimeError("Groq no disponible")
+            completion = cliente_groq.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Eres Jarvis. Resume el siguiente texto en máximo 3 frases cortas "
+                            "para ser leído en voz alta. Sé conciso y directo. "
+                            "Al final añade: 'Si desea la información completa, dígame guárdalo en archivo'."
+                        ),
+                    },
+                    {"role": "user", "content": texto},
+                ],
+                temperature=0.1,
+            )
+            resumen = (completion.choices[0].message.content or "").strip()
+            if resumen:
+                return dirigir_como_senor(resumen)
+        except Exception:
+            pass
+        # Fallback: first 200 chars + prompt to save
+        corte = texto[:200].rsplit(" ", 1)[0]
+        return f"{corte}... Si desea la información completa, dígame guárdalo en archivo."
+
+    def _guardar_respuesta_txt(self, contenido, tema="respuesta"):
+        """Save a response to a TXT file in the configured save path."""
+        os.makedirs(self.RUTA_GUARDAR_TXT, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nombre_limpio = re.sub(r'[^\w\s-]', '', tema)[:50].strip().replace(' ', '_')
+        nombre_archivo = f"jarvis_{nombre_limpio}_{timestamp}.txt"
+        ruta_completa = os.path.join(self.RUTA_GUARDAR_TXT, nombre_archivo)
+        with open(ruta_completa, "w", encoding="utf-8") as f:
+            f.write(f"JARVIS - Respuesta generada el {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+            f.write(f"Consulta: {tema}\n")
+            f.write("=" * 60 + "\n\n")
+            f.write(contenido)
+        return ruta_completa
+
     def actualizar_estado(self, mensaje):
         def _actualizar():
             self.status_label.configure(text=mensaje)
@@ -4501,15 +4584,38 @@ class JarvisApp(ctk.CTk):
             self.log(">>> No detecté una orden después de 'Jarvis'.")
             return
 
-        # Check for multi-monitor commands
         comando_lower = comando.lower()
+
+        # Check for "save to file" request
+        if self._ultima_respuesta_larga and any(
+            x in comando_lower
+            for x in [
+                "guárdalo", "guardalo", "guarda en archivo", "guárdalo en archivo",
+                "crea el fichero", "crea un fichero", "crea el archivo",
+                "crea un archivo", "guarda la información", "guarda la informacion",
+                "ponlo en un archivo", "ponlo en un fichero",
+                "guarda eso", "sí guárdalo", "si guardalo",
+            ]
+        ):
+            ruta = self._guardar_respuesta_txt(
+                self._ultima_respuesta_larga,
+                self._ultimo_comando or "respuesta"
+            )
+            self._ultima_respuesta_larga = None
+            respuesta = f"Información guardada en {ruta}"
+            self.log(f"Jarvis: {respuesta}")
+            self.mostrar_respuesta(comando, respuesta)
+            self.actualizar_estado("Estado: respondiendo")
+            self.hablar_async(respuesta)
+            return
+
+        # Check for multi-monitor commands
         if any(x in comando_lower for x in [
             "segunda pantalla", "segundo monitor",
             "pantalla secundaria", "monitor secundario",
             "otra pantalla", "otro monitor",
         ]) and any(x in comando_lower for x in ["pon", "mueve", "pasa", "lleva"]):
             app_name = _extract_app_from_command(comando)
-            # Clean up app name
             for noise in ["en la segunda pantalla", "a la segunda pantalla",
                           "al segundo monitor", "en el segundo monitor",
                           "a la pantalla secundaria", "en la pantalla secundaria"]:
@@ -4519,9 +4625,7 @@ class JarvisApp(ctk.CTk):
                 if app_name.startswith(prefix):
                     app_name = app_name[len(prefix):].strip()
             respuesta = mover_ventana_a_monitor(app_name, 1)
-            self.log(f"Jarvis: {respuesta}")
-            self.actualizar_estado("Estado: respondiendo")
-            self.hablar_async(respuesta)
+            self._responder_con_voz(comando, respuesta)
             return
 
         # Parse multi-commands
@@ -4535,9 +4639,7 @@ class JarvisApp(ctk.CTk):
                 resultados.append(resultado)
                 time.sleep(0.5)
             resumen = ". ".join(resultados)
-            self.log(f"Jarvis: {resumen}")
-            self.actualizar_estado("Estado: respondiendo")
-            self.hablar_async(resumen)
+            self._responder_con_voz(comando, resumen)
             return
 
         self._ejecutar_comando_individual(comando)
@@ -4549,12 +4651,25 @@ class JarvisApp(ctk.CTk):
             return manejo_archivo
         return consultar_ia(comando, self.historial)
 
+    def _responder_con_voz(self, comando, respuesta):
+        """Send response through voice, auto-summarizing if too long."""
+        self.log(f"Jarvis: {respuesta}")
+        self.mostrar_respuesta(comando, respuesta)
+        self.actualizar_estado("Estado: respondiendo")
+
+        if len(respuesta) > 300:
+            self._ultima_respuesta_larga = respuesta
+            self._ultimo_comando = comando
+            resumen_voz = self._resumir_para_voz(respuesta)
+            self.hablar_async(resumen_voz)
+        else:
+            self._ultima_respuesta_larga = None
+            self.hablar_async(respuesta)
+
     def _ejecutar_comando_individual(self, comando):
         """Execute a single command with logging and voice output."""
         respuesta = self._resolver_comando(comando)
-        self.log(f"Jarvis: {respuesta}")
-        self.actualizar_estado("Estado: respondiendo")
-        self.hablar_async(respuesta)
+        self._responder_con_voz(comando, respuesta)
         return respuesta
 
     def extraer_ruta_de_comando(self, comando):
