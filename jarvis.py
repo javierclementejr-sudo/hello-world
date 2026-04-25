@@ -4752,7 +4752,7 @@ class JarvisApp(ctk.CTk):
             " visual estudio ": " visual studio code ",
             " bscode ": " vs code ",
             " operagx ": " opera gx ",
-            " epic ": " epic games ",
+            " epic store ": " epic games ",
             " whatsap ": " whatsapp ",
             " whasap ": " whatsapp ",
             " guasap ": " whatsapp ",
