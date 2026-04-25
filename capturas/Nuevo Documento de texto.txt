@@ -1,0 +1,8 @@
+¿Cuáles son los sistemas de archivos por defecto más comunes en Windows (NTFS) y en la mayoría de las distribuciones de Linux (EXT4)? ¿Qué ventaja tiene uno sobre otro?
+
+¿Qué es una "Distro" (Distribución) en el mundo Linux y por qué no existe ese concepto en Windows?
+
+¿Cómo gestiona cada sistema la memoria SWAP (intercambio) cuando la RAM física se llena?
+
+¿Qué es WINE y por qué es vital para los usuarios de Linux que necesitan ejecutar aplicaciones diseñadas exclusivamente para Windows?
+

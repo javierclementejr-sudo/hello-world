@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+memoria.json
+agenda.json
+capturas/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
