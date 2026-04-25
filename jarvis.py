@@ -1596,6 +1596,8 @@ def ejecutar_comando_sistema(comando, como_admin=False):
         return salida or "Comando ejecutado correctamente."
 
     if "acceso denegado" in error.lower() or "access denied" in error.lower():
+        if como_admin:
+            return f"Acceso denegado incluso con permisos de administrador: {error}"
         return f"Acceso denegado. Para ejecutar este comando con permisos de administrador, diga: ejecuta como admin {comando}"
 
     if error:
