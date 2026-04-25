@@ -4914,7 +4914,7 @@ class JarvisApp(ctk.CTk):
         self.actualizar_estado("Estado: respondiendo")
 
         if len(respuesta_limpia) > 300:
-            self._ultima_respuesta_larga = respuesta_limpia
+            self._ultima_respuesta_larga = respuesta
             self._ultimo_comando = comando
             resumen_voz = self._resumir_para_voz(respuesta_limpia)
             self.hablar_async(resumen_voz)
