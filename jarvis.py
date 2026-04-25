@@ -1000,6 +1000,148 @@ def extraer_numero(texto):
     return numeros[0] if numeros else None
 
 
+def mover_ventana_a_monitor(nombre, monitor_idx=1):
+    """Move a window to the specified monitor (0=primary, 1=secondary, etc.)."""
+    if IS_WINDOWS:
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+
+            monitors = []
+            def callback(hMonitor, hdcMonitor, lprcMonitor, dwData):
+                rect = lprcMonitor.contents
+                monitors.append((rect.left, rect.top, rect.right, rect.bottom))
+                return 1
+
+            MONITORENUMPROC = ctypes.WINFUNCTYPE(
+                ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+                ctypes.POINTER(ctypes.wintypes.RECT), ctypes.wintypes.LPARAM
+            )
+            user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(callback), 0)
+
+            if monitor_idx >= len(monitors):
+                return f"Solo tengo {len(monitors)} monitor(es). No puedo mover a monitor {monitor_idx + 1}."
+
+            target = monitors[monitor_idx]
+            ventanas = pyautogui.getWindowsWithTitle(limpiar_texto(nombre))
+            for v in ventanas:
+                if v.title:
+                    v.moveTo(target[0], target[1])
+                    v.resizeTo(target[2] - target[0], target[3] - target[1])
+                    return f"He movido {nombre} al monitor {monitor_idx + 1}."
+            return f"No encontré ventana de {nombre} para mover."
+        except Exception as e:
+            return f"No pude mover {nombre}: {e}"
+    else:
+        try:
+            result = subprocess.run(
+                ["xrandr", "--listmonitors"],
+                capture_output=True, text=True, timeout=5,
+            )
+            lines = [l for l in result.stdout.strip().split("\n") if "/" in l]
+            if monitor_idx >= len(lines):
+                return f"Solo tengo {len(lines)} monitor(es)."
+            match = re.search(r"(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)", lines[monitor_idx])
+            if match:
+                w, h, x, y = match.groups()
+                subprocess.run(
+                    ["wmctrl", "-r", nombre, "-e", f"0,{x},{y},{w},{h}"],
+                    capture_output=True, timeout=5,
+                )
+                return f"He movido {nombre} al monitor {monitor_idx + 1}."
+            return "No pude determinar la posición del monitor."
+        except Exception as e:
+            return f"No pude mover {nombre}: {e}"
+
+
+def separar_multi_comandos(texto):
+    """Split a sentence with multiple commands into individual commands."""
+    texto = texto.strip()
+    if not texto:
+        return []
+
+    # Patterns that indicate multi-command: "abre X y Y", "abre X, Y y Z"
+    # But be careful not to split comparisons like "compara X y Y"
+    skip_patterns = [
+        r"compar[ae]", r"diferencia", r"mejor.*o\s",
+        r"vs\.?", r"versus", r"entre.*y",
+    ]
+    texto_lower = texto.lower()
+    for pattern in skip_patterns:
+        if re.search(pattern, texto_lower):
+            return [texto]
+
+    # Split on ", y " or " y " when followed by action verbs
+    action_verbs = (
+        "abre", "abrir", "cierra", "cerrar", "pon", "ponme", "ponlo",
+        "mueve", "mover", "busca", "buscar", "reproduce", "ejecuta",
+        "activa", "desactiva", "sube", "baja", "silencia", "abre",
+    )
+
+    # Try splitting on ", " and " y " / " e "
+    separators = [r"\s*,\s*y\s+", r"\s*,\s+", r"\s+y\s+", r"\s+e\s+"]
+    for sep in separators:
+        parts = re.split(sep, texto, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            # Check if subsequent parts start with action verbs or could inherit the verb
+            comandos = []
+            verbo_actual = ""
+            for i, part in enumerate(parts):
+                part = part.strip()
+                if not part:
+                    continue
+                part_lower = part.lower()
+                tiene_verbo = any(part_lower.startswith(v) for v in action_verbs)
+                if tiene_verbo or i == 0:
+                    comandos.append(part)
+                    # Extract the verb from this part
+                    for v in action_verbs:
+                        if part_lower.startswith(v):
+                            verbo_actual = v
+                            break
+                else:
+                    # Check if this part talks about moving to monitor
+                    if any(x in part_lower for x in [
+                        "segunda pantalla", "segundo monitor", "pantalla secundaria",
+                        "monitor secundario", "otra pantalla", "otro monitor",
+                    ]):
+                        # This is a modifier for the previous command
+                        if comandos:
+                            comandos.append(f"mueve {_extract_app_from_command(comandos[-1])} a la segunda pantalla")
+                        continue
+                    # Inherit verb from previous command
+                    if verbo_actual:
+                        comandos.append(f"{verbo_actual} {part}")
+                    else:
+                        comandos.append(part)
+            if len(comandos) > 1:
+                return comandos
+
+    # Check for "ponmelo/ponlo en la segunda pantalla" as a separate action
+    monitor_patterns = [
+        r"(.+?)\s+(?:y\s+)?(?:ponlo|ponmelo|ponme|muévelo|muevelo|pásalo|pasalo).*?(?:segunda pantalla|segundo monitor|pantalla secundaria|monitor secundario)",
+    ]
+    for pattern in monitor_patterns:
+        match = re.search(pattern, texto, re.IGNORECASE)
+        if match:
+            base_cmd = match.group(1).strip()
+            # Find what app to move
+            app_name = _extract_app_from_command(texto)
+            if app_name:
+                return [base_cmd, f"mueve {app_name} a la segunda pantalla"]
+
+    return [texto]
+
+
+def _extract_app_from_command(comando):
+    """Extract the application name from a command like 'abre spotify'."""
+    comando_lower = comando.lower().strip()
+    for prefix in ("abre ", "abrir ", "cierra ", "cerrar ", "ejecuta ", "mueve "):
+        if comando_lower.startswith(prefix):
+            return comando[len(prefix):].strip()
+    return comando.strip()
+
+
 def cerrar_aplicacion(nombre):
     if IS_WINDOWS:
         try:
@@ -3176,6 +3318,10 @@ class JarvisApp(ctk.CTk):
         self._reactor_anim_id = None
         self._scan_offset = 0
         self._interrupt_monitor_active = threading.Event()
+        self.modo_conversacion = threading.Event()
+        self._conversation_timeout = 30
+        self._last_interaction_time = 0
+        self._interrupted_text = None
 
         try:
             engine = pyttsx3.init()
@@ -3236,7 +3382,7 @@ class JarvisApp(ctk.CTk):
 
         self.subtitle = ctk.CTkLabel(
             self.title_block,
-            text="Just A Rather Very Intelligent System  //  v4.2.0-MARK-VII",
+            text="Just A Rather Very Intelligent System  //  v4.3.0-MARK-VII",
             font=("Consolas", 11),
             text_color="#5a8a9e",
         )
@@ -3390,15 +3536,17 @@ class JarvisApp(ctk.CTk):
         self.textbox.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
         self.textbox.insert(
             "end",
-            ">>> STARK OS v4.2.0 // BOOT SEQUENCE INITIATED\n"
+            ">>> STARK OS v4.3.0 // BOOT SEQUENCE INITIATED\n"
             ">>> NEURAL CORE................ [ONLINE]\n"
             ">>> VOICE ENGINE............... [ARMED]\n"
+            ">>> CONVERSATION MODE.......... [READY]\n"
+            ">>> MULTI-COMMAND ENGINE....... [ACTIVE]\n"
             ">>> WEB SEARCH MODULE.......... [ACTIVE]\n"
             ">>> COMPARISON ENGINE.......... [READY]\n"
-            ">>> DESKTOP AUTOMATION......... [LINKED]\n"
-            ">>> HOTWORD LISTENER........... [ARMED]\n"
+            ">>> MULTI-MONITOR.............. [LINKED]\n"
             ">>> VOICE INTERRUPT SYSTEM..... [ACTIVE]\n"
-            ">>> ALL SYSTEMS NOMINAL\n\n",
+            ">>> ALL SYSTEMS NOMINAL\n"
+            '>>> Di "Jarvis" para iniciar conversación fluida\n\n',
         )
 
         # === SIDE PANEL ===
@@ -3775,17 +3923,19 @@ class JarvisApp(ctk.CTk):
         self._reactor_anim_id = self.after(50, self._start_reactor_animation)
 
     def _render_hud_metrics(self, hud_estado):
+        conv_mode = "ON" if self.modo_conversacion.is_set() else "OFF"
         self.hud_metrics.configure(state="normal")
         self.hud_metrics.delete("1.0", "end")
         self.hud_metrics.insert(
             "end",
             f"CORE STATUS\n"
             f"{hud_estado}"
+            f"CONV MODE:    {conv_mode}\n"
             f"VOICE ENGINE: ONLINE\n"
             f"WEB SEARCH:   ACTIVE\n"
-            f"COMPARATOR:   READY\n"
+            f"MULTI-CMD:    READY\n"
             f"INTERRUPT:    ARMED\n"
-            f"DESKTOP:      LINKED\n",
+            f"MULTI-MON:    LINKED\n",
         )
         self.hud_metrics.configure(state="disabled")
 
@@ -3794,30 +3944,29 @@ class JarvisApp(ctk.CTk):
         self.commands_box.delete("1.0", "end")
         self.commands_box.insert(
             "end",
-            "BASIC\n"
-            "- qué hora es / qué fecha es\n"
-            "- cuál es mi IP\n\n"
+            "CONVERSACION FLUIDA\n"
+            "- Di 'Jarvis' una vez\n"
+            "- Sigue hablando sin repetir\n"
+            "- 'adiós' / 'nada más' = salir\n\n"
+            "MULTI-COMANDO\n"
+            "- abre Opera y Spotify\n"
+            "- abre X, pon Y en 2a pantalla\n\n"
             "WEB & COMPARATIVAS\n"
             "- compara iPhone vs Samsung\n"
-            "- busca información sobre...\n"
             "- investiga sobre...\n"
             "- qué es mejor X o Y\n\n"
-            "ARCHIVOS\n"
-            '- accede al archivo "ruta"\n'
-            "- lee / resume el archivo\n"
-            "- busca [texto] en archivo\n\n"
             "SISTEMA\n"
             "- abre / cierra [app]\n"
-            "- volumen al 50\n"
-            "- captura de pantalla\n\n"
+            "- mueve [app] a 2a pantalla\n"
+            "- volumen al 50\n\n"
             "MEDIA & WEB\n"
             "- clima en Madrid\n"
             "- top noticias\n"
             "- busca en YouTube [tema]\n"
             "- traduce 'frase' en idioma\n\n"
-            "COMUNICACION\n"
-            "- envía whatsapp al NUM\n"
-            "- envía correo a EMAIL\n",
+            "ARCHIVOS\n"
+            '- accede al archivo "ruta"\n'
+            "- lee / resume el archivo\n",
         )
         self.commands_box.configure(state="disabled")
 
@@ -3829,16 +3978,21 @@ class JarvisApp(ctk.CTk):
         def _actualizar():
             self.status_label.configure(text=mensaje)
             mensaje_lower = mensaje.lower()
-            if "escuchando" in mensaje_lower:
+            en_conv = self.modo_conversacion.is_set()
+
+            if "escuchando" in mensaje_lower or "conversación activa" in mensaje_lower:
+                badge_text = "CONVERSATION" if en_conv else "MIC ACTIVE"
                 self.listen_badge.configure(
-                    text="MIC ACTIVE", text_color="#00ff88"
+                    text=badge_text, text_color="#00ff88"
                 )
-                hud_estado = "  LISTENER: CAPTURING\n"
+                hud_estado = "  LISTENER: CONVERSATION\n" if en_conv else "  LISTENER: CAPTURING\n"
                 self.footer_right.configure(
-                    text="LISTENING", text_color="#00ff88"
+                    text="CONV MODE" if en_conv else "LISTENING",
+                    text_color="#00ff88",
                 )
                 self.orbit_status.configure(
-                    text="RECEIVING", text_color="#00ff88"
+                    text="DIALOGUE" if en_conv else "RECEIVING",
+                    text_color="#00ff88",
                 )
                 self.reactor_mode = "listening"
             elif "respondiendo" in mensaje_lower:
@@ -3854,17 +4008,30 @@ class JarvisApp(ctk.CTk):
                 )
                 self.reactor_mode = "speaking"
             else:
-                self.listen_badge.configure(
-                    text="HOTWORD ARMED", text_color="#00ff88"
-                )
-                hud_estado = "  LISTENER: HOTWORD READY\n"
-                self.footer_right.configure(
-                    text="READY", text_color="#00ff88"
-                )
-                self.orbit_status.configure(
-                    text="IDLE", text_color="#00d4ff"
-                )
-                self.reactor_mode = "idle"
+                if en_conv:
+                    self.listen_badge.configure(
+                        text="CONVERSATION", text_color="#00ff88"
+                    )
+                    hud_estado = "  LISTENER: CONVERSATION\n"
+                    self.footer_right.configure(
+                        text="CONV MODE", text_color="#00ff88"
+                    )
+                    self.orbit_status.configure(
+                        text="DIALOGUE", text_color="#00ff88"
+                    )
+                    self.reactor_mode = "listening"
+                else:
+                    self.listen_badge.configure(
+                        text="HOTWORD ARMED", text_color="#00ff88"
+                    )
+                    hud_estado = "  LISTENER: HOTWORD READY\n"
+                    self.footer_right.configure(
+                        text="READY", text_color="#00ff88"
+                    )
+                    self.orbit_status.configure(
+                        text="IDLE", text_color="#00d4ff"
+                    )
+                    self.reactor_mode = "idle"
 
             self._render_hud_metrics(hud_estado)
 
@@ -3926,18 +4093,18 @@ class JarvisApp(ctk.CTk):
                 self.tts_engine = None
 
     def _monitor_voice_interrupt(self):
-        """Monitors microphone while TTS is speaking; stops TTS if user talks."""
+        """Monitors microphone while TTS is speaking; stops TTS and captures what user said."""
         try:
             recognizer = sr.Recognizer()
             with sr.Microphone() as source:
                 recognizer.adjust_for_ambient_noise(source, duration=0.3)
                 base_energy = recognizer.energy_threshold
-                threshold = base_energy * 2.5
+                threshold = base_energy * 2.0
 
                 while self._interrupt_monitor_active.is_set() and self.ia_hablando.is_set():
                     try:
                         audio = recognizer.listen(
-                            source, timeout=0.5, phrase_time_limit=1
+                            source, timeout=0.5, phrase_time_limit=2
                         )
                         if audio.frame_data:
                             import audioop
@@ -3945,6 +4112,14 @@ class JarvisApp(ctk.CTk):
                             if rms > threshold:
                                 self.log(">>> Interrupción por voz detectada.")
                                 self.detener_voz()
+                                # Try to recognize what the user said during interruption
+                                try:
+                                    texto = self.reconocer_texto(recognizer, audio).strip()
+                                    if texto:
+                                        self._interrupted_text = texto
+                                        self.log(f">>> Capturado durante interrupción: {texto}")
+                                except Exception:
+                                    pass
                                 return
                     except sr.WaitTimeoutError:
                         continue
@@ -4093,17 +4268,61 @@ class JarvisApp(ctk.CTk):
             self.log(">>> No detecté una orden después de 'Jarvis'.")
             return
 
-        manejo_archivo = self.procesar_comando_archivo(comando)
-        if manejo_archivo is not None:
-            self.log(f"Jarvis: {manejo_archivo}")
+        # Check for multi-monitor commands
+        comando_lower = comando.lower()
+        if any(x in comando_lower for x in [
+            "segunda pantalla", "segundo monitor",
+            "pantalla secundaria", "monitor secundario",
+            "otra pantalla", "otro monitor",
+        ]) and any(x in comando_lower for x in ["pon", "mueve", "pasa", "lleva"]):
+            app_name = _extract_app_from_command(comando)
+            # Clean up app name
+            for noise in ["en la segunda pantalla", "a la segunda pantalla",
+                          "al segundo monitor", "en el segundo monitor",
+                          "a la pantalla secundaria", "en la pantalla secundaria"]:
+                app_name = app_name.lower().replace(noise, "").strip()
+            for prefix in ["ponmelo ", "ponme ", "ponlo ", "muévelo ", "muevelo ",
+                           "pon ", "mueve ", "pasa ", "lleva "]:
+                if app_name.startswith(prefix):
+                    app_name = app_name[len(prefix):].strip()
+            respuesta = mover_ventana_a_monitor(app_name, 1)
+            self.log(f"Jarvis: {respuesta}")
             self.actualizar_estado("Estado: respondiendo")
-            self.hablar_async(manejo_archivo)
+            self.hablar_async(respuesta)
             return
 
-        respuesta = consultar_ia(comando, self.historial)
+        # Parse multi-commands
+        comandos = separar_multi_comandos(comando)
+        if len(comandos) > 1:
+            self.log(f">>> Multi-comando detectado: {len(comandos)} órdenes")
+            resultados = []
+            for i, cmd in enumerate(comandos):
+                self.log(f">>> Ejecutando [{i+1}/{len(comandos)}]: {cmd}")
+                resultado = self._resolver_comando(cmd)
+                resultados.append(resultado)
+                time.sleep(0.5)
+            resumen = ". ".join(resultados)
+            self.log(f"Jarvis: {resumen}")
+            self.actualizar_estado("Estado: respondiendo")
+            self.hablar_async(resumen)
+            return
+
+        self._ejecutar_comando_individual(comando)
+
+    def _resolver_comando(self, comando):
+        """Process a command and return the response text without side effects."""
+        manejo_archivo = self.procesar_comando_archivo(comando)
+        if manejo_archivo is not None:
+            return manejo_archivo
+        return consultar_ia(comando, self.historial)
+
+    def _ejecutar_comando_individual(self, comando):
+        """Execute a single command with logging and voice output."""
+        respuesta = self._resolver_comando(comando)
         self.log(f"Jarvis: {respuesta}")
         self.actualizar_estado("Estado: respondiendo")
         self.hablar_async(respuesta)
+        return respuesta
 
     def extraer_ruta_de_comando(self, comando):
         comando = comando.strip()
@@ -4308,6 +4527,33 @@ class JarvisApp(ctk.CTk):
             target=self.procesar_comando, args=(comando,), daemon=True
         ).start()
 
+    def _entrar_modo_conversacion(self):
+        """Enter conversation mode — no wake word needed until timeout."""
+        self.modo_conversacion.set()
+        self._last_interaction_time = time.time()
+        self.log(">>> Modo conversación ACTIVADO (no necesitas decir 'Jarvis')")
+        self.actualizar_estado("Estado: modo conversación")
+
+    def _salir_modo_conversacion(self):
+        """Exit conversation mode — wake word required again."""
+        if self.modo_conversacion.is_set():
+            self.modo_conversacion.clear()
+            self.log(">>> Modo conversación DESACTIVADO (di 'Jarvis' para hablar)")
+
+    def _conversacion_activa(self):
+        """Check if conversation mode is still active (not timed out)."""
+        if not self.modo_conversacion.is_set():
+            return False
+        elapsed = time.time() - self._last_interaction_time
+        if elapsed > self._conversation_timeout:
+            self._salir_modo_conversacion()
+            return False
+        return True
+
+    def _renovar_conversacion(self):
+        """Refresh the conversation timeout."""
+        self._last_interaction_time = time.time()
+
     def bucle_escucha_continua(self):
         reconocedor = sr.Recognizer()
         reconocedor.dynamic_energy_threshold = True
@@ -4328,14 +4574,72 @@ class JarvisApp(ctk.CTk):
                 )
 
                 while self.escucha_activa.is_set():
-                    self.actualizar_estado("Estado: esperando 'Jarvis'")
+                    en_conversacion = self._conversacion_activa()
+
+                    if en_conversacion:
+                        self.actualizar_estado("Estado: conversación activa")
+                    else:
+                        self.actualizar_estado("Estado: esperando 'Jarvis'")
+
+                    # Check if there's interrupted text to process
+                    interrupted = self._interrupted_text
+                    if interrupted:
+                        self._interrupted_text = None
+                        self.log(f">>> Procesando texto interrumpido: {interrupted}")
+                        self._entrar_modo_conversacion()
+                        comando = self.extraer_comando(interrupted) if self.contiene_wake_word(interrupted) else interrupted
+                        if comando and len(comando.split()) > 1:
+                            self._renovar_conversacion()
+                            self.procesar_comando(comando)
+                            continue
+
                     try:
+                        # Wait for TTS to finish before listening (unless interrupted)
+                        if self.ia_hablando.is_set():
+                            time.sleep(0.2)
+                            continue
+
+                        timeout = 8 if en_conversacion else 1
                         audio = reconocedor.listen(
-                            source, timeout=1, phrase_time_limit=20
+                            source, timeout=timeout, phrase_time_limit=30
                         )
                         texto = self.reconocer_texto(reconocedor, audio).strip()
 
-                        if not texto or not self.contiene_wake_word(texto):
+                        if not texto:
+                            continue
+
+                        tiene_wake = self.contiene_wake_word(texto)
+
+                        if en_conversacion:
+                            # In conversation mode: process anything, no wake word needed
+                            self._renovar_conversacion()
+
+                            # Check for exit phrases
+                            texto_lower = texto.lower()
+                            if any(x in texto_lower for x in [
+                                "hasta luego", "adiós", "adios", "nos vemos",
+                                "eso es todo", "nada más", "nada mas",
+                                "puedes descansar", "deja de escuchar",
+                                "modo espera", "standby",
+                            ]):
+                                self._salir_modo_conversacion()
+                                self.log("Jarvis: Entendido. Estaré aquí si me necesita.")
+                                self.hablar_async("Entendido. Estaré aquí si me necesita.")
+                                continue
+
+                            # Extract command (remove wake word if present)
+                            if tiene_wake:
+                                comando = self.extraer_comando(texto)
+                            else:
+                                comando = texto
+
+                            self.log(f"Tu: {comando}")
+                            if comando and len(comando.split()) >= 1:
+                                self.procesar_comando(comando)
+                            continue
+
+                        # Not in conversation mode: need wake word
+                        if not tiene_wake:
                             continue
 
                         self.log(f">>> Wake word detectada: {texto}")
@@ -4345,10 +4649,13 @@ class JarvisApp(ctk.CTk):
                             self.detener_voz()
                             time.sleep(0.2)
 
+                        # Enter conversation mode
+                        self._entrar_modo_conversacion()
+
                         comando = self.extraer_comando(texto)
                         if not comando or len(comando.split()) <= 1:
                             self.log("Jarvis: Estoy aquí. Dígame.")
-                            self.actualizar_estado("Estado: respondiendo")
+                            self.actualizar_estado("Estado: escuchando")
                             self.hablar_async("Estoy aquí. Dígame.")
                             try:
                                 comando = self.capturar_comando(
@@ -4359,8 +4666,12 @@ class JarvisApp(ctk.CTk):
                                 continue
 
                         if comando:
+                            self._renovar_conversacion()
                             self.procesar_comando(comando)
                     except sr.WaitTimeoutError:
+                        if en_conversacion:
+                            # Timeout in conversation = exit conversation
+                            self._salir_modo_conversacion()
                         continue
                     except sr.UnknownValueError:
                         continue
