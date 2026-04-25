@@ -1568,9 +1568,10 @@ def ejecutar_comando_sistema(comando, como_admin=False):
     try:
         if IS_WINDOWS:
             if como_admin:
+                cmd_escaped = comando.replace("'", "''")
                 resultado = subprocess.run(
                     ["powershell", "-NoProfile", "-Command",
-                     f"Start-Process powershell -ArgumentList '-NoProfile','-Command','{comando}' -Verb RunAs -Wait"],
+                     f"Start-Process powershell -ArgumentList '-NoProfile','-Command','{cmd_escaped}' -Verb RunAs -Wait"],
                     capture_output=True, text=True, timeout=60,
                 )
             else:
@@ -1595,9 +1596,7 @@ def ejecutar_comando_sistema(comando, como_admin=False):
         return salida or "Comando ejecutado correctamente."
 
     if "acceso denegado" in error.lower() or "access denied" in error.lower():
-        if not como_admin:
-            return ejecutar_comando_sistema(comando, como_admin=True)
-        return f"Necesito permisos de administrador para ejecutar este comando: {error}"
+        return f"Acceso denegado. Para ejecutar este comando con permisos de administrador, diga: ejecuta como admin {comando}"
 
     if error:
         return f"El comando falló: {error}"
@@ -3169,6 +3168,16 @@ def ejecutar_accion_local(comando):
         )
         return consultar_ia_directa(prompt)
 
+    if comando_lower.startswith(("ejecuta como admin ", "ejecuta como administrador ")):
+        prefijo = (
+            "ejecuta como admin "
+            if comando_lower.startswith("ejecuta como admin ")
+            else "ejecuta como administrador "
+        )
+        return ejecutar_comando_sistema(
+            comando_original[len(prefijo) :], como_admin=True
+        )
+
     if comando_lower.startswith("ejecuta comando "):
         return ejecutar_comando_sistema(
             comando_original[len("ejecuta comando ") :]
@@ -4372,12 +4381,12 @@ class JarvisApp(ctk.CTk):
             " peliculas ": " películas ",
             " asi ": " así ",
             " pagina ": " página ",
-            " abreme ": " ábre ",
+            " abreme ": " abre ",
             " cierrame ": " cierra ",
             " ponme ": " pon ",
             # Common verb confusions
             " habre ": " abre ",
-            " habreme ": " ábre ",
+            " habreme ": " abre ",
             " habrir ": " abrir ",
             " ciérralo ": " cierra ",
             " cierrale ": " cierra ",
